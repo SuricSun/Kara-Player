@@ -36,6 +36,7 @@ namespace Suancai {
 					DirectX::XMFLOAT4 screen;
 					DirectX::XMFLOAT4 time;
 					DirectX::XMFLOAT4 userData;
+					DirectX::XMINT4 datai;
 				};
 				class VertexProp {
 				public:
@@ -73,6 +74,11 @@ namespace Suancai {
 			};
 
 			class SuancaiRenderer {
+			public:
+				enum class PrimitiveType : u8 {
+					TriangleStrip,
+					PointStrip
+				};
 			protected:
 				friend class GraphicsObject;
 				std::vector<std::pair<IDXGIAdapter*, DXGI_ADAPTER_DESC>> adaperVec;
@@ -84,9 +90,26 @@ namespace Suancai {
 				ID3D11Texture2D* pReadFromRT = nullptr;
 				ID3D11RenderTargetView* pReadFromRTV = nullptr;
 				ID3D11ShaderResourceView* pReadFromSRV = nullptr;
+				ID3D11UnorderedAccessView* pReadFromUAV = nullptr;
+
 				ID3D11Texture2D* pWriteToRT = nullptr;
 				ID3D11RenderTargetView* pWriteToRTV = nullptr;
 				ID3D11ShaderResourceView* pWriteToSRV = nullptr;
+				ID3D11UnorderedAccessView* pWriteToUAV = nullptr;
+
+				ID3D11Texture2D* pReadFromVelRT = nullptr;
+				ID3D11ShaderResourceView* pReadFromVelSRV = nullptr;
+				ID3D11UnorderedAccessView* pReadFromVelUAV = nullptr;
+
+				ID3D11Texture2D* pWriteToVelRT = nullptr;
+				ID3D11ShaderResourceView* pWriteToVelSRV = nullptr;
+				ID3D11UnorderedAccessView* pWriteToVelUAV = nullptr;
+
+				// * Compute Shader
+				ID3D11ComputeShader* pAdvectForDenCS = nullptr;
+				ID3D11ComputeShader* pAdvectForVelCS = nullptr;
+				ID3D11ComputeShader* pDiffuseCS = nullptr;
+				ID3D11ComputeShader* pProjectCS = nullptr;
 
 				ID3D11Texture2D* pTex = nullptr;
 				ID3D11ShaderResourceView* pTexSRV = nullptr;
@@ -120,11 +143,13 @@ namespace Suancai {
 				void beginWindowed();
 				void resizeSwapChain();
 				void clearRT(float r, float g, float b, float a);
-				void render(GraphicsObject* pGO, u32 drawVertCnt, bool raw = false);
+				void render(GraphicsObject* pGO, u32 drawVertCnt, PrimitiveType pt);
 				void blur(float userDataX = 0.0f, float userDataY = 0.0f, bool blurMainRT = false);
+				void stableFluid(float dt, float diff, float visc);
 				void copyToRT();
 				void PresentRT(UINT syncInterval, UINT flags);
 				void switchRT();
+				void swap(void* a, void* b);
 				void setAlphaBlend(bool isBlend);
 				~SuancaiRenderer();
 			protected:

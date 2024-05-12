@@ -53,9 +53,22 @@ void Suancai::Kara::Renderer::AudioSpecRenderer::init() {
 		#endif
 		addr(this->rdr)
 	);
+
+	this->pCurProcessedData = addr(this->processedData0);
+	this->pNxtProcessedData = addr(this->processedData1);
 }
 
-void Suancai::Kara::Renderer::AudioSpecRenderer::render(Suancai::Util::FFT::Complex* pSpec, i32 cnt) {
+void Suancai::Kara::Renderer::AudioSpecRenderer::clear() {
+
+	this->rdr.clearRT(0, 0, 0, 0);
+}
+
+void Suancai::Kara::Renderer::AudioSpecRenderer::setAlphaBlend(bool enable) {
+
+	this->rdr.setAlphaBlend(enable);
+}
+
+void Suancai::Kara::Renderer::AudioSpecRenderer::render(float* pAudioL, float* pAudioR, Suancai::Util::FFT::Complex* pSpec, i32 cnt, bool isLeft) {
 
 	//this->specData.resize(cnt);
 	//// * pre process
@@ -89,6 +102,7 @@ void Suancai::Kara::Renderer::AudioSpecRenderer::render(Suancai::Util::FFT::Comp
 	//			this->specData[addIdx].real = (pSpec[i].real + gapSum) / 2.0f;
 	//			addIdx++;
 	//			startIdx = i + 1;
+	// 
 	//			break;
 	//		} else {
 	//			gapSum += pSpec[i].real;
@@ -116,25 +130,38 @@ void Suancai::Kara::Renderer::AudioSpecRenderer::render(Suancai::Util::FFT::Comp
 	fftBinSize -= idx20hz;
 
 	// TODO: This is dumb to calc every frame
-	i32 vertexCnt = this->go.getVertexCnt();
+	i32 vertexCnt = this->go.getVertexCnt();/*
 	for (int i = 0; i < vertexCnt / 2; i++) {
 		float t = float(i) / (vertexCnt / 2);
 		pVertexBuffer[2 * i].pos = {t,0,0};
 		pVertexBuffer[2 * i + 1].pos = {t,0, 0};
-	}
+	}*/
 
 	float h = 0, s = 1, v = 1, r = 0, g = 0, b = 0;
 	i64 fftIdx = 1;
 	i64 lastProcessIdx = 0;
-	float xMappingStrenth = 16;
-	i32 windCnt = 8;
-	i32 curTime = 0;
+	float xMappingStrenth = 64;
+	float windCnt = 0.5;
+	float yOffset = 0;
 	i32 binSize = fftBinSize;
 	float binSizeF = binSize;
 	i32 fftVertexPairCnt = vertexCnt / 2;
+	this->pCurProcessedData->resize(fftVertexPairCnt);
+	this->pNxtProcessedData->resize(fftVertexPairCnt);
 	Suancai::Util::FFT::Complex* pCurFFTBin = pSpec;
-	float amplifier = 90;
-	float circleRadius = 0.2;
+	float amplifier = 64;
+	float circleRadius = 1;
+	float neverReachRate = 1;
+
+	float specFlex = 0;
+	for (int i = 0; i < cnt; i++) {
+		specFlex += pSpec[i].real / amplifier;
+	}
+	specFlex /= cnt;
+
+	float tmp = powf(specFlex * amplifier / 2, 2) * 0.025;
+	this->curTime += NeverReach(tmp, 2, 0.05) + 0.001;
+
 	{
 		//pCurFFTBin[0].real = 0;
 		bool shouldQuit = false;
@@ -183,8 +210,8 @@ void Suancai::Kara::Renderer::AudioSpecRenderer::render(Suancai::Util::FFT::Comp
 				if (x < 0)x = 0;
 				//x = NeverReach(x, specMaxHeight);
 				//x *= (1.0f - ((xMappingStrenth + 1.0f) / xMappingStrenth) * (-1.0f / (xMappingStrenth * ((fftIdx) / binSizeF) + 1.0f) + 1.0f));
-				float circleX = cos(((i / float(fftVertexPairCnt - 1)) - 0.5) * 2 * windCnt * PI_F + curTime);
-				float circleY = -sin(((i / float(fftVertexPairCnt - 1)) - 0.5) * 2 * windCnt * PI_F + curTime);
+				float circleX = cos(((i / float(fftVertexPairCnt - 1.0f)) - 0.5f) * 2.0f * windCnt * PI_F);
+				float circleY = -sin(((i / float(fftVertexPairCnt - 1.0f)) - 0.5f) * 2.0f * windCnt * PI_F);
 				//pVertexBuffer[i * 2 + 0].pos.x = float(i) / fftVertexPairCnt;
 				if (x <= 0)x = 0;
 				float a = 0.1;
@@ -192,13 +219,12 @@ void Suancai::Kara::Renderer::AudioSpecRenderer::render(Suancai::Util::FFT::Comp
 				float t = float(i) / fftVertexPairCnt;
 				float xamp = pow(a - a * t, 3) * b + 1;
 				//x *= (1 + pow(t, 3));
-				pVertexBuffer[2 * i].pos = {t,0,0};
-				pVertexBuffer[2 * i + 1].pos = {t,x + 4.0f / 1080, 0};
-				//pVertexBuffer[2 * i].pos = {circleX * (x + circleRadius), circleY * (x + circleRadius), 0};
-				//pVertexBuffer[2 * i + 1].pos = {circleX * (circleRadius), circleY * (circleRadius), 0};
-				ImGui::ColorConvertHSVtoRGB(t * (0.8 - 0.7) + 0.7, 1, 1, r, g, b);
-				pVertexBuffer[2 * i].color = {r,g,b,1};
-				pVertexBuffer[2 * i + 1].color = {r,g,b,1};
+				t += yOffset;
+				//pVertexBuffer[2 * i].pos = {t,0,0};
+				//pVertexBuffer[2 * i + 1].pos = {t,x + 4.0f / 1080, 0};
+				x = NeverReach(x, neverReachRate, circleRadius);
+				x += sqrt(powf(1.0f / 1920.0f, 2) + powf(1.0f / 1080.0f, 2));
+				this->pCurProcessedData->at(i) = x;
 			}
 			if (shouldQuit) {
 				break;
@@ -227,8 +253,8 @@ void Suancai::Kara::Renderer::AudioSpecRenderer::render(Suancai::Util::FFT::Comp
 			//开始合并
 			//sum /= cnt;
 			for (; start <= end; start++) {
-				float circleX = cos(((start / float(fftVertexPairCnt - 1)) - 0.5) * 2 * windCnt * PI_F + curTime);
-				float circleY = -sin(((start / float(fftVertexPairCnt - 1)) - 0.5) * 2 * windCnt * PI_F + curTime);
+				float circleX = cos(((start / float(fftVertexPairCnt - 1.0f)) - 0.5f) * 2.0f * windCnt * PI_F);
+				float circleY = -sin(((start / float(fftVertexPairCnt - 1.0f)) - 0.5f) * 2.0f * windCnt * PI_F);
 				float x = sum / amplifier;
 				//x = (toDB(x) + 75) / 200;
 				if (x < 0)x = 0;
@@ -240,13 +266,12 @@ void Suancai::Kara::Renderer::AudioSpecRenderer::render(Suancai::Util::FFT::Comp
 				float t = float(start) / fftVertexPairCnt;
 				float xamp = pow(a - a * t, 3) * b + 1;
 				////x *= (1 + pow(t, 3));
-				pVertexBuffer[2 * start].pos = {t,0,0};
-				pVertexBuffer[2 * start + 1].pos = {t,x + 4.0f / 1080, 0};
-				//pVertexBuffer[2 * start].pos = {circleX * (x + circleRadius), circleY * (x + circleRadius), 0};
-				//pVertexBuffer[2 * start + 1].pos = {circleX * (circleRadius), circleY * (circleRadius), 0};
-				ImGui::ColorConvertHSVtoRGB(t * (0.8 - 0.7) + 0.7, 1, 1, r, g, b);
-				pVertexBuffer[2 * start].color = {r,g,b,1};
-				pVertexBuffer[2 * start + 1].color = {r,g,b,1};
+				t += yOffset;
+				//pVertexBuffer[2 * start].pos = {t,0,0};
+				//pVertexBuffer[2 * start + 1].pos = {t,x + 4.0f / 1080, 0};
+				x = NeverReach(x, neverReachRate, circleRadius);
+				x += sqrt(powf(1.0f/1920.0f, 2) + powf(1.0f/1080.0f, 2));
+				this->pCurProcessedData->at(start) = x;
 			}
 			//清理
 			sum = pCurFFTBin[fftIdx].real;
@@ -255,42 +280,152 @@ void Suancai::Kara::Renderer::AudioSpecRenderer::render(Suancai::Util::FFT::Comp
 			begginingSX *= (fftVertexPairCnt - 1);
 		}
 	}
+
+	int itCnt = 4;
+	int rad = 2;
+	for (int it = 0; it < itCnt; it++) {
+		for (int i = 0; i < this->pCurProcessedData->size(); i++) {
+			int cnt = 0;
+			float avg = 0;
+			for (int k = max(i - rad, 0); k <= min(i + rad, this->pCurProcessedData->size() - 1); k++) {
+				avg += this->pCurProcessedData->at(k);
+				cnt++;
+			}
+			avg /= cnt;
+			this->pNxtProcessedData->at(i) = avg;
+		}
+		auto ptmp = this->pCurProcessedData;
+		this->pCurProcessedData = this->pNxtProcessedData;
+		this->pNxtProcessedData = ptmp;
+	}
+
+	specFlex = powf(specFlex * amplifier, 1) * 0.025;
+	specFlex += 1;
+
+	//this->curTime = 0;
+	specFlex = 1;
+
+	// * START RENDER
+
+	// * render audio line
+	int linePointCnt = 128;
+	for (int i = 0; i < linePointCnt; i++) {
+		float avg = (pAudioL[i] + pAudioR[i]) / 2;
+		pVertexBuffer[i].pos = {pAudioL[i] * circleRadius,  pAudioR[i] * circleRadius, 0};
+		ImGui::ColorConvertHSVtoRGB(/*t * (0.45 - 0.35) + 0.35*/fmodf(curTime / 4, 1) + 0.25, 1, 1, r, g, b);
+		pVertexBuffer[i].color = {r,g,b,1};
+	}
+	this->go.UpdateVertexBufferToGPU();
+
+	DirectX::XMStoreFloat4x4(
+		addr(pGOConstantBuffer->mvp),
+		DirectX::XMMatrixTranspose(
+			DirectX::XMMatrixScaling(/*1080.0f / 1920.0f*/1, 1, 1)
+			*
+			DirectX::XMMatrixScaling(specFlex, specFlex, 1)
+			*
+			DirectX::XMMatrixRotationZ(fmodf(0, 65535))
+		)
+	);
+	this->go.UpdateConstantBufferToGPU();
+	//this->rdr.render(addr(this->go), linePointCnt, SuancaiRenderer::PrimitiveType::PointStrip);
+
+	DirectX::XMStoreFloat4x4(
+		addr(pGOConstantBuffer->mvp),
+		DirectX::XMMatrixTranspose(
+			DirectX::XMMatrixScaling(/*1080.0f / 1920.0f*/1, 1, 1)
+			*
+			DirectX::XMMatrixScaling(-specFlex, specFlex, 1)
+			*
+			DirectX::XMMatrixRotationZ(fmodf(0, 65535))
+		)
+	);
+	this->go.UpdateConstantBufferToGPU();
+	//this->rdr.render(addr(this->go), linePointCnt, SuancaiRenderer::PrimitiveType::PointStrip);
+
+	// * render spec
+
+	for (int i = 0; i < pCurProcessedData->size(); i++) {
+		float circleX = cos(((i / float(fftVertexPairCnt - 1.0f)) - 0.5f) * 2.0f * windCnt * PI_F);
+		float circleY = -sin(((i / float(fftVertexPairCnt - 1.0f)) - 0.5f) * 2.0f * windCnt * PI_F);
+		float x = pCurProcessedData->at(i);
+		//pVertexBuffer[2 * i].pos = {circleX * (x + circleRadius), circleY * (x + circleRadius), 0};
+		//pVertexBuffer[2 * i + 1].pos = {circleX * (circleRadius - x), circleY * (circleRadius - x), 0};
+		pVertexBuffer[2 * i].pos = {float(i) / fftVertexPairCnt, x, 0};
+		pVertexBuffer[2 * i + 1].pos = {float(i) / fftVertexPairCnt, 0, 0};
+		ImGui::ColorConvertHSVtoRGB(/*t * (0.45 - 0.35) + 0.35*/fmodf(curTime / 4, 1), 1, 1, r, g, b);
+		pVertexBuffer[2 * i].color = {r,g,b,1};
+		pVertexBuffer[2 * i + 1].color = {r,g,b,1};
+	}
+
 	//for (int i = 0; i < fftBinSize; i++) {
-	//	float mappednormalizedPos = CoordMap(float(i) / (fftBinSize - 1), 128);
-	//	pVertexBuffer[2 * i].pos = {mappednormalizedPos,0,0};
-	//	pVertexBuffer[2 * i + 1].pos = {mappednormalizedPos, pSpec[i].real / 80 + 4.0f / 1080, 0};
+	//	float mappedNormalizedPos = CoordMap(float(i) / (fftBinSize - 1), 128);
+	//	pVertexBuffer[2 * i].pos = {mappedNormalizedPos,0,0};
+	//	pVertexBuffer[2 * i + 1].pos = {mappedNormalizedPos, pSpec[i].real / 80 + 4.0f / 1080, 0};
 	//	h = float(i) / fftBinSize;
-	//	ImGui::ColorConvertHSVtoRGB(mappednormalizedPos * (0.85 - 0.7) + 0.7, 1, 1, r, g, b);
+	//	ImGui::ColorConvertHSVtoRGB(mappedNormalizedPos * (0.85 - 0.7) + 0.7, 1, 1, r, g, b);
 	//	pVertexBuffer[2 * i].color = {r,g,b,1};
 	//	pVertexBuffer[2 * i + 1].color = {r,g,b,1};
 	//}
 
 	this->go.UpdateVertexBufferToGPU();
-	this->rdr.setAlphaBlend(false);
-	this->rdr.clearRT(0, 0, 0, 0);
 
-	pGOConstantBuffer->userData.x = 0;
-	DirectX::XMStoreFloat4x4(
-		addr(pGOConstantBuffer->mvp),
-		DirectX::XMMatrixTranslation(-0.5, 0, 0)
-		*
-		DirectX::XMMatrixScaling(2, 1, 1)
-		*
-		DirectX::XMMatrixRotationZ(0)
-	);
-	this->go.UpdateConstantBufferToGPU();
-	this->rdr.render(addr(this->go), vertexCnt);
+	if (isLeft == false) {
+		pGOConstantBuffer->userData.x = 0;
+		DirectX::XMStoreFloat4x4(
+			addr(pGOConstantBuffer->mvp),
+			DirectX::XMMatrixTranspose(
+				DirectX::XMMatrixScaling(/*1080.0f / 1920.0f*/1, 1, 1)
+				*
+				DirectX::XMMatrixScaling(specFlex, specFlex, 1)
+				*
+				DirectX::XMMatrixRotationZ(fmodf(0, 65535))
+			)
+		);
+		this->go.UpdateConstantBufferToGPU();
+		this->rdr.render(addr(this->go), vertexCnt, SuancaiRenderer::PrimitiveType::TriangleStrip);
 
-	DirectX::XMStoreFloat4x4(
-		addr(pGOConstantBuffer->mvp),
-		DirectX::XMMatrixTranslation(-0.5, 0, 0)
-		*
-		DirectX::XMMatrixScaling(2, -1, 1)
-		*
-		DirectX::XMMatrixRotationZ(0)
-	);
-	this->go.UpdateConstantBufferToGPU();
-	this->rdr.render(addr(this->go), vertexCnt);
+		DirectX::XMStoreFloat4x4(
+			addr(pGOConstantBuffer->mvp),
+			DirectX::XMMatrixTranspose(
+				DirectX::XMMatrixScaling(/*1080.0f / 1920.0f*/1, 1, 1)
+				*
+				DirectX::XMMatrixScaling(specFlex, -specFlex, 1)
+				*
+				DirectX::XMMatrixRotationZ(fmodf(0, 65535))
+			)
+		);
+		this->go.UpdateConstantBufferToGPU();
+		this->rdr.render(addr(this->go), vertexCnt, SuancaiRenderer::PrimitiveType::TriangleStrip);
+	} else {
+		DirectX::XMStoreFloat4x4(
+			addr(pGOConstantBuffer->mvp),
+			DirectX::XMMatrixTranspose(
+				DirectX::XMMatrixScaling(/*1080.0f / 1920.0f*/1, 1, 1)
+				*
+				DirectX::XMMatrixScaling(-specFlex, specFlex, 1)
+				*
+				DirectX::XMMatrixRotationZ(fmodf(0, 65535))
+			)
+		);
+		this->go.UpdateConstantBufferToGPU();
+		this->rdr.render(addr(this->go), vertexCnt, SuancaiRenderer::PrimitiveType::TriangleStrip);
+
+		DirectX::XMStoreFloat4x4(
+			addr(pGOConstantBuffer->mvp),
+			DirectX::XMMatrixTranspose(
+				DirectX::XMMatrixScaling(/*1080.0f / 1920.0f*/1, 1, 1)
+				*
+				DirectX::XMMatrixScaling(-specFlex, -specFlex, 1)
+				*
+				DirectX::XMMatrixRotationZ(fmodf(0, 65535))
+			)
+		);
+		this->go.UpdateConstantBufferToGPU();
+		this->rdr.render(addr(this->go), vertexCnt, SuancaiRenderer::PrimitiveType::TriangleStrip);
+	}
+
+	
 
 	//DirectX::XMStoreFloat4x4(
 	//	addr(pGOConstantBuffer->mvp),
@@ -358,6 +493,13 @@ void Suancai::Kara::Renderer::AudioSpecRenderer::render(Suancai::Util::FFT::Comp
 	);
 	this->go.UpdateConstantBufferToGPU();
 	this->rdr.render(addr(this->go), vertexCnt);*/
+
+
+
+	//this->rdr.stableFluid(0.001, 32, 1);
+}
+
+void Suancai::Kara::Renderer::AudioSpecRenderer::blurAndPresent() {
 
 	this->rdr.blur();
 	this->rdr.blur();

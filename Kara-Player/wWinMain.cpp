@@ -8,6 +8,7 @@
 #include"FFT.h"
 #include"PathUtil.h"
 #include"KaraPlayer.h"
+#include"FSExplorer.h"
 
 #include<process.h>
 
@@ -523,10 +524,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     bool show_another_window = false;
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
-    std::vector<u8string> fileList;
-    std::u8string path = u8"C:/Users/Suric/AppData/Local/GeometryDash/*";
-    std::u16string path16 = u"C:/Users/Suric/AppData/Local/GeometryDash/";
-    EnumFile((WCHAR*)L"C:/Users/Suric/AppData/Local/GeometryDash/*", fileList);
+    Suancai::Util::FSExplorer fse;
+    fse.goToAbsolute(u8"c:\\cloudmusic\\");
 
     Suancai::Player::KaraPlayer kp;
 
@@ -572,30 +571,46 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         if (ImGui::Begin("Main", nullptr, ImGuiWindowFlags_::ImGuiWindowFlags_NoTitleBar)) {
             if (ImGui::BeginTabBar("Bar")) {
                 if (ImGui::BeginTabItem("Vifft")) {
+                    ImGui::Text("Path: %s", fse.currentFolder.u8string().c_str());
                     if (ImGui::Button("Up Folder")) {
-                        std::u8string parentPath;
-                        PathUtil::GetParentFolder(path, parentPath);
-                        std::u16string p16;
-                        UTFStringAffair::UTF8To16(parentPath, p16);
-                        //EnumFile((WCHAR*)p16.c_str(), fileList);
+                        fse.goback();
                     }
-                    for (auto it : fileList) {
-                        if (ImGui::Button((char*)it.c_str())) {
+                    auto files = fse.getFiles();
+                    for (auto it : files) {
+                        ImVec4 col = {1.0f,1.0f,1.0f,1.0f};
+                        if (it.second == 0) {
+                            col = {1.0f, 211.0f / 255.0f, 86.0f / 255.0f,1.0f};
+                            ImGui::PushStyleColor(0, col);
+                        } else if (it.second == 1) {
+                            col = {1.0f,1.0f,1.0f,1.0f};
+                            ImGui::PushStyleColor(0, col);
+                        }
+                        if (ImGui::Button((char*)it.first.c_str())) {
+                            if (it.second == 0) {
+                                u8string* p = new u8string();
+                                kp.play((char8_t*)(p->append(fse.currentFolder.u8string()).append(it.first)).c_str());
+                            } else if (it.second == 1) {
+                                if (fse.goToRelative(it.first.c_str()) == false) {
+                                    // * its not a dir, try play it
+                                }
+                            }
                             u8string* p = new u8string();
-                            p->append(u8"C:/Users/Suric/AppData/Local/GeometryDash/").append(it);
-                            kp.play((char8_t*)p->c_str());
+                            //p->append(u8"C:/Users/Suric/AppData/Local/GeometryDash/").append(it);
                             //_beginthreadex(0, 0, AudioThread, p, 0, 0);
                             //_beginthreadex(0, 0, DecodeThread, nullptr, 0, 0);
                         }
+                        if (it.second == 0 || it.second == 1) {
+                            ImGui::PopStyleColor();
+                        }
                     }
-                    ImGui::Text("%.2f/%d/%.2f", kp.time, kp.sample, kp.sample / 48000.0);
-                    ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
-                    ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
-                    ImGui::Checkbox("Another Window", &show_another_window);
+                    //ImGui::Text("%.2f/%d/%.2f", kp.time, kp.sample, kp.sample / 48000.0);
+                    //ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
+                    //ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
+                    //ImGui::Checkbox("Another Window", &show_another_window);
 
-                    ImGui::SliderFloat("coeff", (float*)&coeff, 0.8f, 1.0f);
-                    ImGui::SliderFloat("amp", (float*)&amplifier, 0.0f, 2048);            // Edit 1 float using a slider from 0.0f to 1.0f
-                    ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
+                    //ImGui::SliderFloat("coeff", (float*)&coeff, 0.8f, 1.0f);
+                    //ImGui::SliderFloat("amp", (float*)&amplifier, 0.0f, 2048);            // Edit 1 float using a slider from 0.0f to 1.0f
+                    //ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
 
                     ImGui::SameLine();
                     if (pR != nullptr) {

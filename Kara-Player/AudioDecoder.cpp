@@ -4,6 +4,8 @@ using namespace Suancai;
 
 void Suancai::Media::Audio::AudioDecoder::openFile(char8_t* pPath, i32 decodeCBufferSize, i32 dstSampleRate) {
     
+	this->clearOpenedResource();
+
 	char* pFilePath = (char*)pPath;
 
 	int ret = 0;
@@ -132,4 +134,12 @@ void Suancai::Media::Audio::AudioDecoder::resample(float* src, i32 srcSize, floa
 		// * do interpolation
 		dst[dSampleIdx] = (1.0f - t) * src[l] + t * src[r];
 	}
+}
+
+void Suancai::Media::Audio::AudioDecoder::clearOpenedResource() {
+
+	av_packet_free(&this->pPkt);
+	av_frame_free(&this->pFrame);
+	avcodec_free_context(&this->pCdcCtx);
+	avformat_free_context(this->pFmtCtx);
 }

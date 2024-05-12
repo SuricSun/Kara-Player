@@ -70,7 +70,7 @@ namespace Suancai {
 				AVFormatContext* pFmtCtx = nullptr;
 				const AVCodec* pCdc = nullptr;
 				AVCodecContext* pCdcCtx = nullptr;
-				AVCodecParserContext* pCdcPasrCtx = nullptr;
+				//AVCodecParserContext* pCdcPasrCtx = nullptr;
 				AVFrame* pFrame = nullptr;
 				AVPacket* pPkt = nullptr;
 				i32 aud_strm_idx = -1;
@@ -86,6 +86,7 @@ namespace Suancai {
 				i32 decode(i32 minimumSamples);
 				CircularBuffer<float>& getCBuffer();
 				void resample(float* src, i32 srcSize, float* dst, i32 dstSize);
+				void clearOpenedResource();
 			};
 
 

@@ -18,12 +18,7 @@ float4 main(PixelInput input) : SV_TARGET {
     
     float curX = input.svPos.x / screen.x;
     float curY = input.svPos.y / screen.y;
-    //return float4(0, 1, 0, input.col.a);
-    if (userData.x > 0)
-    {
-        return float4(1, 1, 1, 1);
-
-    }
+    //return float4(1,1,1,1);
     return input.col;
     float3 posObj = input.posObj.xyz;
     posObj.x *= userData.x;

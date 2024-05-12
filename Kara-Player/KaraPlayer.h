@@ -23,6 +23,7 @@ namespace Suancai {
 		public:
 			enum Type : u32 {
 				None,
+				Init,
 				Play,
 				Resume,
 				Pause,
@@ -53,6 +54,14 @@ namespace Suancai {
 				}
 				msg = messages.front();
 				messages.pop();
+				return true;
+			}
+			bool peek(Message& msg) {
+				std::lock_guard<std::mutex> lock(mtx);
+				if (messages.empty()) {
+					return false;
+				}
+				msg = messages.front();
 				return true;
 			}
 		};

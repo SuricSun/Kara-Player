@@ -19,14 +19,7 @@ struct PixelInput {
 PixelInput main(VertexInput input) {
     
     PixelInput output;
-    if (userData.x > 0)
-    {
-        output.svPos = mul(mvp, float4(input.pos.x, input.pos.y * (0.5 / (input.pos.x + 1)), input.pos.z, 1));
-    }
-    else
-    {
-        output.svPos = mul(mvp, float4(input.pos, 1));
-    }
+    output.svPos = mul(mvp, float4(input.pos, 1));
     output.posObj = input.pos;
     output.col = input.col;
     return output;

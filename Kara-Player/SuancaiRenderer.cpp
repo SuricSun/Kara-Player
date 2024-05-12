@@ -105,9 +105,21 @@ void Suancai::Kara::Renderer::SuancaiRenderer::resizeSwapChain() {
 	SAFE_RELEASE(this->pReadFromRT);
 	SAFE_RELEASE(this->pReadFromRTV);
 	SAFE_RELEASE(this->pReadFromSRV);
+	SAFE_RELEASE(this->pReadFromUAV);
+
 	SAFE_RELEASE(this->pWriteToRT);
 	SAFE_RELEASE(this->pWriteToRTV);
 	SAFE_RELEASE(this->pWriteToSRV);
+	SAFE_RELEASE(this->pWriteToUAV);
+	
+	SAFE_RELEASE(this->pReadFromVelRT);
+	SAFE_RELEASE(this->pReadFromVelSRV);
+	SAFE_RELEASE(this->pReadFromVelUAV);
+	
+	SAFE_RELEASE(this->pWriteToVelRT);
+	SAFE_RELEASE(this->pWriteToVelSRV);
+	SAFE_RELEASE(this->pWriteToVelUAV);
+
 	// * configure rtv srv
 	UINT support = 0;
 	this->pDevice->CheckFormatSupport(this->rtDesc.Format, addr(support));
@@ -115,7 +127,8 @@ void Suancai::Kara::Renderer::SuancaiRenderer::resizeSwapChain() {
 		CHECK_AND_THROW(FAILED(hr), "back buffer format dont support mip auto gen", 0);
 	}
 	this->pRT->GetDesc(addr(this->rtDesc));
-	this->rtDesc.BindFlags |= (D3D11_BIND_FLAG::D3D11_BIND_SHADER_RESOURCE);
+	this->rtDesc.BindFlags |= D3D11_BIND_FLAG::D3D11_BIND_UNORDERED_ACCESS;
+	this->rtDesc.BindFlags |= D3D11_BIND_FLAG::D3D11_BIND_SHADER_RESOURCE;
 	this->rtDesc.MipLevels = 0;
 	this->rtDesc.MiscFlags |= D3D11_RESOURCE_MISC_GENERATE_MIPS;
 	D3D11_SHADER_RESOURCE_VIEW_DESC desc{};
@@ -123,6 +136,8 @@ void Suancai::Kara::Renderer::SuancaiRenderer::resizeSwapChain() {
 	desc.ViewDimension = D3D11_SRV_DIMENSION::D3D11_SRV_DIMENSION_TEXTURE2D;
 	desc.Texture2D.MipLevels = -1;
 	desc.Texture2D.MostDetailedMip = 0;
+	// * UAV DESC
+	CD3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc(D3D11_UAV_DIMENSION_TEXTURE2D, this->rtDesc.Format);
 	// * create read from RTV SRV
 	hr = this->pDevice->CreateTexture2D(
 		addr(this->rtDesc),
@@ -142,7 +157,13 @@ void Suancai::Kara::Renderer::SuancaiRenderer::resizeSwapChain() {
 		addr(this->pReadFromSRV)
 	);
 	CHECK_AND_THROW(FAILED(hr), "create pre-srv", 0);
-	// * create read to RTV SRV
+	hr = this->pDevice->CreateUnorderedAccessView(
+		this->pReadFromRT,
+		addr(uavDesc),
+		addr(this->pReadFromUAV)
+	);
+	CHECK_AND_THROW(FAILED(hr), "create pre-uav", 0);
+	// * create write to RTV SRV
 	hr = this->pDevice->CreateTexture2D(
 		addr(this->rtDesc),
 		nullptr,
@@ -161,7 +182,104 @@ void Suancai::Kara::Renderer::SuancaiRenderer::resizeSwapChain() {
 		addr(this->pWriteToSRV)
 	);
 	CHECK_AND_THROW(FAILED(hr), "create pre-srv", 0);
+	hr = this->pDevice->CreateUnorderedAccessView(
+		this->pWriteToRT,
+		addr(uavDesc),
+		addr(this->pWriteToUAV)
+	);
+	CHECK_AND_THROW(FAILED(hr), "create pre-uav", 0);
+	// * vel
+	hr = this->pDevice->CreateTexture2D(
+		addr(this->rtDesc),
+		nullptr,
+		addr(this->pReadFromVelRT)
+	);
+	CHECK_AND_THROW(FAILED(hr), "create pre-rt", 0);
+	hr = this->pDevice->CreateShaderResourceView(
+		this->pReadFromVelRT,
+		addr(desc),
+		addr(this->pReadFromVelSRV)
+	);
+	hr = this->pDevice->CreateUnorderedAccessView(
+		this->pReadFromVelRT,
+		addr(uavDesc),
+		addr(this->pReadFromVelUAV)
+	);
+	CHECK_AND_THROW(FAILED(hr), "create pre-uav", 0);
+	// * 
+	CHECK_AND_THROW(FAILED(hr), "create pre-srv", 0);
+	hr = this->pDevice->CreateTexture2D(
+		addr(this->rtDesc),
+		nullptr,
+		addr(this->pWriteToVelRT)
+	);
+	CHECK_AND_THROW(FAILED(hr), "create pre-rt", 0);
+	hr = this->pDevice->CreateShaderResourceView(
+		this->pWriteToVelRT,
+		addr(desc),
+		addr(this->pWriteToVelSRV)
+	);
+	CHECK_AND_THROW(FAILED(hr), "create pre-srv", 0);
+	hr = this->pDevice->CreateUnorderedAccessView(
+		this->pWriteToVelRT,
+		addr(uavDesc),
+		addr(this->pWriteToVelUAV)
+	);
+	CHECK_AND_THROW(FAILED(hr), "create pre-uav", 0);
+	// * init shader
+	hr = S_OK;
 
+	char szFilePath[MAX_PATH + 1] = {0};
+	GetModuleFileNameA(NULL, szFilePath, MAX_PATH);
+	(strrchr(szFilePath, '\\'))[0] = 0; // 删除文件名，只获得路径字串//
+	std::string path;
+	path.clear();
+	path.append(szFilePath).append("\\").append((char*)"AdvectForDenCS.cso");
+
+	i32 bufferBytes = 1024 * 1024;
+	u8* pShaderBuffer = new u8[bufferBytes]; // 1MB
+	FILE* f = nullptr;
+	fopen_s(addr(f), (char*)path.c_str(), "rb");
+	i32 bytesRead = fread_s(pShaderBuffer, bufferBytes, 1, bufferBytes, f);
+	fclose(f);
+	hr = this->pDevice->CreateComputeShader(pShaderBuffer, bytesRead, nullptr, addr(this->pAdvectForDenCS));
+	CHECK_AND_THROW(FAILED(hr), "create AdvectForDenCS", 0);
+	///////////////////////////////////
+	path.clear();
+	path.append(szFilePath).append("\\").append((char*)"AdvectForVelCS.cso");
+
+	bufferBytes = 1024 * 1024;
+	pShaderBuffer = new u8[bufferBytes]; // 1MB
+	f = nullptr;
+	fopen_s(addr(f), (char*)path.c_str(), "rb");
+	bytesRead = fread_s(pShaderBuffer, bufferBytes, 1, bufferBytes, f);
+	fclose(f);
+	hr = this->pDevice->CreateComputeShader(pShaderBuffer, bytesRead, nullptr, addr(this->pAdvectForVelCS));
+	CHECK_AND_THROW(FAILED(hr), "create AdvectForVelCS", 0);
+	///////////////////////////////////
+	path.clear();
+	path.append(szFilePath).append("\\").append((char*)"DiffuseCS.cso");
+
+	bufferBytes = 1024 * 1024;
+	pShaderBuffer = new u8[bufferBytes]; // 1MB
+	f = nullptr;
+	fopen_s(addr(f), (char*)path.c_str(), "rb");
+	bytesRead = fread_s(pShaderBuffer, bufferBytes, 1, bufferBytes, f);
+	fclose(f);
+	hr = this->pDevice->CreateComputeShader(pShaderBuffer, bytesRead, nullptr, addr(this->pDiffuseCS));
+	CHECK_AND_THROW(FAILED(hr), "create DiffuseCS", 0);
+	//////////////////////////////////
+	path.clear();
+	path.append(szFilePath).append("\\").append((char*)"ProjectCS.cso");
+
+	bufferBytes = 1024 * 1024;
+	pShaderBuffer = new u8[bufferBytes]; // 1MB
+	f = nullptr;
+	fopen_s(addr(f), (char*)path.c_str(), "rb");
+	bytesRead = fread_s(pShaderBuffer, bufferBytes, 1, bufferBytes, f);
+	fclose(f);
+	hr = this->pDevice->CreateComputeShader(pShaderBuffer, bytesRead, nullptr, addr(this->pProjectCS));
+	CHECK_AND_THROW(FAILED(hr), "create ProjectCS", 0);
 	//WCHAR szFilePath[MAX_PATH + 1] = { 0 };
 	//GetModuleFileNameW(NULL, szFilePath, MAX_PATH);
 	///*
@@ -367,7 +485,7 @@ void Suancai::Kara::Renderer::SuancaiRenderer::createSwapChain(HWND hwnd) {
 	desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 	desc.SampleDesc.Count = 1;
 	desc.SampleDesc.Quality = 0;
-	desc.SwapEffect = DXGI_SWAP_EFFECT::DXGI_SWAP_EFFECT_FLIP_DISCARD;
+	desc.SwapEffect = DXGI_SWAP_EFFECT::DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
 
 	IDXGIDevice* pDxgiDevice = nullptr;
 	IDXGIAdapter* pAdapter = nullptr;
@@ -411,14 +529,23 @@ void Suancai::Kara::Renderer::SuancaiRenderer::createSwapChain(HWND hwnd) {
 	this->resizeSwapChain();
 }
 
-void Suancai::Kara::Renderer::SuancaiRenderer::render(GraphicsObject* pGO, u32 drawVertCnt, bool raw) {
+void Suancai::Kara::Renderer::SuancaiRenderer::render(GraphicsObject* pGO, u32 drawVertCnt, PrimitiveType pt) {
+	
+	D3D11_PRIMITIVE_TOPOLOGY topo;
+	switch (pt) {
+		case PrimitiveType::TriangleStrip:
+			topo = D3D11_PRIMITIVE_TOPOLOGY::D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP;
+			break;
+		case PrimitiveType::PointStrip:
+			topo = D3D11_PRIMITIVE_TOPOLOGY::D3D10_PRIMITIVE_TOPOLOGY_LINESTRIP;
+			break;
+		default:
+			return;
+	}
 
 	ID3D11DeviceContext* pCtx = this->pCtx;
-	if (raw) {
-		pCtx->OMSetRenderTargets(1, addr(this->pRTV), nullptr);
-	} else {
-		pCtx->OMSetRenderTargets(1, addr(this->pWriteToRTV), nullptr);
-	}
+	
+	pCtx->OMSetRenderTargets(1, addr(this->pWriteToRTV), nullptr);
 	UINT stride = sizeof(GraphicsObject::VertexProp), offset = 0;
 	pCtx->IASetVertexBuffers(
 		0,
@@ -428,7 +555,7 @@ void Suancai::Kara::Renderer::SuancaiRenderer::render(GraphicsObject* pGO, u32 d
 		addr(offset)
 	);
 	pCtx->IASetInputLayout(pGO->pVertexBufferIL);
-	pCtx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY::D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+	pCtx->IASetPrimitiveTopology(topo);
 	pCtx->VSSetShader(pGO->pVS, nullptr, 0);
 	pCtx->VSSetConstantBuffers(0, 1, addr(pGO->pConstantBufferGPU));
 	pCtx->PSSetShader(pGO->pPS, nullptr, 0);
@@ -462,9 +589,13 @@ void Suancai::Kara::Renderer::SuancaiRenderer::PresentRT(UINT syncInterval, UINT
 void Suancai::Kara::Renderer::SuancaiRenderer::switchRT() {
 
 	// * switch views
+
 	auto tempRT = this->pReadFromRT;
 	this->pReadFromRT = this->pWriteToRT;
 	this->pWriteToRT = tempRT;
+	tempRT = this->pReadFromVelRT;
+	this->pReadFromVelRT = this->pWriteToVelRT;
+	this->pWriteToVelRT = tempRT;
 
 	auto tempRTV = this->pReadFromRTV;
 	this->pReadFromRTV = this->pWriteToRTV;
@@ -473,6 +604,44 @@ void Suancai::Kara::Renderer::SuancaiRenderer::switchRT() {
 	auto tempSRV = this->pReadFromSRV;
 	this->pReadFromSRV = this->pWriteToSRV;
 	this->pWriteToSRV = tempSRV;
+	tempSRV = this->pReadFromVelSRV;
+	this->pReadFromVelSRV = this->pWriteToVelSRV;
+	this->pWriteToVelSRV = tempSRV;
+
+	auto tempUAV = this->pReadFromUAV;
+	this->pReadFromUAV = this->pWriteToUAV;
+	this->pWriteToUAV = tempUAV;
+	tempUAV = this->pReadFromVelUAV;
+	this->pReadFromVelUAV = this->pWriteToVelUAV;
+	this->pWriteToVelUAV = tempUAV;
+}
+
+void Suancai::Kara::Renderer::SuancaiRenderer::swap(void* a, void* b) {
+
+	auto tempRT = this->pReadFromRT;
+	this->pReadFromRT = this->pWriteToRT;
+	this->pWriteToRT = tempRT;
+	tempRT = this->pReadFromVelRT;
+	this->pReadFromVelRT = this->pWriteToVelRT;
+	this->pWriteToVelRT = tempRT;
+
+	auto tempRTV = this->pReadFromRTV;
+	this->pReadFromRTV = this->pWriteToRTV;
+	this->pWriteToRTV = tempRTV;
+
+	auto tempSRV = this->pReadFromSRV;
+	this->pReadFromSRV = this->pWriteToSRV;
+	this->pWriteToSRV = tempSRV;
+	tempSRV = this->pReadFromVelSRV;
+	this->pReadFromVelSRV = this->pWriteToVelSRV;
+	this->pWriteToVelSRV = tempSRV;
+
+	auto tempUAV = this->pReadFromUAV;
+	this->pReadFromUAV = this->pWriteToUAV;
+	this->pWriteToUAV = tempUAV;
+	tempUAV = this->pReadFromVelUAV;
+	this->pReadFromVelUAV = this->pWriteToVelUAV;
+	this->pWriteToVelUAV = tempUAV;
 }
 
 void Suancai::Kara::Renderer::SuancaiRenderer::setAlphaBlend(bool isBlend) {
@@ -532,6 +701,103 @@ void Suancai::Kara::Renderer::SuancaiRenderer::blur(float userDataX, float userD
 	pCtx->OMSetRenderTargets(1, addr(pNullRTV), nullptr);
 	ID3D11ShaderResourceView* pNullSRV = nullptr;
 	pCtx->PSSetShaderResources(0, 1, addr(pNullSRV));
+}
+
+void Suancai::Kara::Renderer::SuancaiRenderer::stableFluid(float dt, float diff, float visc) {
+	
+	GraphicsObject::ConstantBuffer* pBlurCB = (GraphicsObject::ConstantBuffer*)this->pBlurGO->getConstantBuffer();
+
+	pBlurCB->screen.x = this->rtDesc.Width;
+	pBlurCB->screen.y = this->rtDesc.Height;
+
+	LARGE_INTEGER freq{};
+	QueryPerformanceFrequency(addr(freq));
+	LARGE_INTEGER li{};
+	QueryPerformanceCounter(addr(li));
+	pBlurCB->time.x = float(li.QuadPart) / float(freq.QuadPart);
+
+	ID3D11UnorderedAccessView* p = nullptr;
+
+	// * Vel Step
+
+	//pBlurCB->userData.x = dt;
+	//pBlurCB->userData.y = visc;
+	//pBlurCB->datai.x = 64;
+	//this->pBlurGO->UpdateConstantBufferToGPU();
+
+	//// Diffuse
+	//this->switchRT();
+	//this->pCtx->CSSetConstantBuffers(0, 1, addr(this->pBlurGO->pConstantBufferGPU));
+	//this->pCtx->CSSetUnorderedAccessViews(0, 1, addr(this->pReadFromVelUAV), nullptr);
+	//this->pCtx->CSSetUnorderedAccessViews(1, 1, addr(this->pWriteToVelUAV), nullptr);
+	//this->pCtx->CSSetShader(this->pDiffuseCS, nullptr, 0);
+	//this->pCtx->Dispatch((this->rtDesc.Width + 32 - 1) / 32.0f, (this->rtDesc.Height + 32 - 1) / 32.0f, 1);
+	//this->pCtx->CSSetUnorderedAccessViews(0, 1, addr(p), nullptr);
+	//this->pCtx->CSSetUnorderedAccessViews(1, 1, addr(p), nullptr);
+	//this->pCtx->CSSetUnorderedAccessViews(2, 1, addr(p), nullptr);
+
+	//// Project
+	//this->pCtx->CSSetConstantBuffers(0, 1, addr(this->pBlurGO->pConstantBufferGPU));
+	//this->pCtx->CSSetUnorderedAccessViews(0, 1, addr(this->pWriteToVelUAV), nullptr);
+	//this->pCtx->CSSetUnorderedAccessViews(1, 1, addr(this->pReadFromVelUAV), nullptr);
+	//this->pCtx->CSSetShader(this->pProjectCS, nullptr, 0);
+	//this->pCtx->Dispatch((this->rtDesc.Width + 32 - 1) / 32.0f, (this->rtDesc.Height + 32 - 1) / 32.0f, 1);
+	//this->pCtx->CSSetUnorderedAccessViews(0, 1, addr(p), nullptr);
+	//this->pCtx->CSSetUnorderedAccessViews(1, 1, addr(p), nullptr);
+	//this->pCtx->CSSetUnorderedAccessViews(2, 1, addr(p), nullptr);
+
+	//// Advect
+	//this->switchRT();
+	//this->pCtx->CSSetConstantBuffers(0, 1, addr(this->pBlurGO->pConstantBufferGPU));
+	//this->pCtx->CSSetUnorderedAccessViews(0, 1, addr(this->pReadFromVelUAV), nullptr);
+	//this->pCtx->CSSetUnorderedAccessViews(1, 1, addr(this->pWriteToVelUAV), nullptr);
+	//this->pCtx->CSSetShader(this->pAdvectForVelCS, nullptr, 0);
+	//this->pCtx->Dispatch((this->rtDesc.Width + 32 - 1) / 32.0f, (this->rtDesc.Height + 32 - 1) / 32.0f, 1);
+	//this->pCtx->CSSetUnorderedAccessViews(0, 1, addr(p), nullptr);
+	//this->pCtx->CSSetUnorderedAccessViews(1, 1, addr(p), nullptr);
+	//this->pCtx->CSSetUnorderedAccessViews(2, 1, addr(p), nullptr);
+
+	//// Project
+	//this->pCtx->CSSetConstantBuffers(0, 1, addr(this->pBlurGO->pConstantBufferGPU));
+	//this->pCtx->CSSetUnorderedAccessViews(0, 1, addr(this->pWriteToVelUAV), nullptr);
+	//this->pCtx->CSSetUnorderedAccessViews(1, 1, addr(this->pReadFromVelUAV), nullptr);
+	//this->pCtx->CSSetShader(this->pProjectCS, nullptr, 0);
+	//this->pCtx->Dispatch((this->rtDesc.Width + 32 - 1) / 32.0f, (this->rtDesc.Height + 32 - 1) / 32.0f, 1);
+	//this->pCtx->CSSetUnorderedAccessViews(0, 1, addr(p), nullptr);
+	//this->pCtx->CSSetUnorderedAccessViews(1, 1, addr(p), nullptr);
+	//this->pCtx->CSSetUnorderedAccessViews(2, 1, addr(p), nullptr);
+
+	// * Den Step
+
+	pBlurCB->userData.x = dt;
+	pBlurCB->userData.y = diff;
+	pBlurCB->datai.x = 64;
+	this->pBlurGO->UpdateConstantBufferToGPU();
+
+	//// Advect
+	this->switchRT();
+	this->pCtx->CSSetConstantBuffers(0, 1, addr(this->pBlurGO->pConstantBufferGPU));
+	this->pCtx->CSSetUnorderedAccessViews(0, 1, addr(this->pReadFromUAV), nullptr);
+	this->pCtx->CSSetUnorderedAccessViews(1, 1, addr(this->pWriteToUAV), nullptr);
+	this->pCtx->CSSetUnorderedAccessViews(2, 1, addr(this->pWriteToVelUAV), nullptr);
+	this->pCtx->CSSetShader(this->pAdvectForDenCS, nullptr, 0);
+	this->pCtx->Dispatch((this->rtDesc.Width + 32 - 1) / 32.0f, (this->rtDesc.Height + 32 - 1) / 32.0f, 1);
+	this->pCtx->CSSetUnorderedAccessViews(0, 1, addr(p), nullptr);
+	this->pCtx->CSSetUnorderedAccessViews(1, 1, addr(p), nullptr);
+	this->pCtx->CSSetUnorderedAccessViews(2, 1, addr(p), nullptr);
+
+	// Diffuse
+	for (int i = 0; i < 64; i++) {
+		this->switchRT();
+		this->pCtx->CSSetConstantBuffers(0, 1, addr(this->pBlurGO->pConstantBufferGPU));
+		this->pCtx->CSSetUnorderedAccessViews(0, 1, addr(this->pReadFromUAV), nullptr);
+		this->pCtx->CSSetUnorderedAccessViews(1, 1, addr(this->pWriteToUAV), nullptr);
+		this->pCtx->CSSetShader(this->pDiffuseCS, nullptr, 0);
+		this->pCtx->Dispatch((this->rtDesc.Width + 32 - 1) / 32.0f, (this->rtDesc.Height + 32 - 1) / 32.0f, 1);
+		this->pCtx->CSSetUnorderedAccessViews(0, 1, addr(p), nullptr);
+		this->pCtx->CSSetUnorderedAccessViews(1, 1, addr(p), nullptr);
+		this->pCtx->CSSetUnorderedAccessViews(2, 1, addr(p), nullptr);
+	}
 }
 
 Suancai::Kara::Renderer::GraphicsObject::GraphicsObject() {

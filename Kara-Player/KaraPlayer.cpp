@@ -10,10 +10,21 @@ unsigned __stdcall Suancai::Player::KaraPlayer::AudioThread(void* pArg) {
         u32 free = 0, total = 0;
         bool start = false;
         i32 fftSize = 8192;
-        float* pWindowed = new float[fftSize];
-        FFT fft;
-        fft.init(fftSize);
+        float* pWindowedL = new float[fftSize];
+        float* pWindowedR = new float[fftSize];
+        float* pAudioL = new float[fftSize];
+        float* pAudioR = new float[fftSize];
+        FFT fftL;
+        FFT fftR;
+        fftL.init(fftSize);
+        fftR.init(fftSize);
         i32 readSampleLogicalStart = 0;
+        // * init
+        AudioEnumerator emu;
+        emu.init();
+        p->audioRenderer.init(emu.getDefaultRenderDevice(), 10000000, false);
+        p->audioRenderer.start();
+        p->vr.init();
         // * idle
         Message msg;
         while (true) {
@@ -22,12 +33,11 @@ unsigned __stdcall Suancai::Player::KaraPlayer::AudioThread(void* pArg) {
                 switch (msg.type) {
                     case Message::Type::Play:
                     {
-                        // * now open new file
-                        AudioEnumerator emu;
-                        emu.init();
-                        p->audioRenderer.init(emu.getDefaultRenderDevice(), 10000000, false);
-                        p->audioRenderer.enableRender();
-                        p->vr.init();
+                        // * every time recv PLAY message, we set start to true
+                        // * reset audio stream
+                        p->audioRenderer.stop();
+                        p->audioRenderer.reset();
+                        p->audioRenderer.start();
                         start = true;
                         break;
                     }
@@ -70,13 +80,19 @@ unsigned __stdcall Suancai::Player::KaraPlayer::AudioThread(void* pArg) {
                 desiredLogicalRead = logicalRead;
             }
             // * windowing
-            pWindowed[0] = p->audioDecoder.decodeCBuffer.buffer[0][(desiredLogicalRead + 0) % channelSamples];
+            pAudioL[0] = p->audioDecoder.decodeCBuffer.buffer[0][(desiredLogicalRead) % channelSamples];
+            pAudioR[0] = p->audioDecoder.decodeCBuffer.buffer[1][(desiredLogicalRead) % channelSamples];
+            pWindowedL[0] = 0;
+            pWindowedR[0] = 0;
             for (int i = 1; i < fftSize; i++) {
-                pWindowed[i] =
-                    pow((0.5f - (1.0f - 0.5f) * cos((2.0f * PI_F * i) / float((fftSize - 1)))), 2) *
-                    (p->audioDecoder.decodeCBuffer.buffer[0][(desiredLogicalRead + i) % channelSamples] -
-                        0.93f * p->audioDecoder.decodeCBuffer.buffer[0][(desiredLogicalRead + i - 1) % channelSamples]
-                        - 0 * pWindowed[i - 1]);
+                pAudioL[i] = p->audioDecoder.decodeCBuffer.buffer[0][(desiredLogicalRead + i) % channelSamples];
+                pAudioR[i] = p->audioDecoder.decodeCBuffer.buffer[1][(desiredLogicalRead + i) % channelSamples];
+                pWindowedL[i] =
+                    pow((0.5f - (1.0f - 0.5f) * cos((2.0f * PI_F * i) / float((fftSize - 1)))), 1) *
+                    (pAudioL[i] - 0.93f * pAudioL[i - 1]);
+                pWindowedR[i] =
+                    pow((0.5f - (1.0f - 0.5f) * cos((2.0f * PI_F * i) / float((fftSize - 1)))), 1) *
+                    (pAudioR[i] - 0.93f * pAudioR[i - 1]);
             }
             /*for (int i = 2; i < fftSize; i++) {
 				pWindowed[i] =
@@ -88,8 +104,13 @@ unsigned __stdcall Suancai::Player::KaraPlayer::AudioThread(void* pArg) {
                 pWindowed[i] *= pow((0.5f - (1.0f - 0.5f) * cos((2.0f * PI_F * i) / float((fftSize - 1)))), 2);
 			}*/
             p->audioDecoder.decodeCBuffer.forwardReadStart(desiredLogicalRead - logicalRead);
-            fft.doFFT(pWindowed, fftSize, 0);
-            p->vr.render(fft.p_result1_final + (fftSize / 4), fftSize / 4);
+            fftL.doFFT(pWindowedL, fftSize, 0);
+            fftR.doFFT(pWindowedR, fftSize, 0);
+            p->vr.clear();
+            p->vr.setAlphaBlend(false);
+            p->vr.render(pAudioL, pAudioR, fftL.p_result1_final, fftSize / 2, true);
+            p->vr.render(pAudioL, pAudioR, fftR.p_result1_final, fftSize / 2, false);
+            p->vr.blurAndPresent();
         }
     } catch (Suancai::Exception::BaseException* pE) {
         pE->showMsg();
@@ -127,9 +148,9 @@ unsigned __stdcall Suancai::Player::KaraPlayer::DecodeThread(void* pArg) {
             }
             // * now decode if ASS WE CAN
             // * decode the whole end point buffer size
-            p->audioDecoder.decode(48000 * 10);
+            p->audioDecoder.decode(48000);
             // * then we sleep for half that length
-            Sleep((10.0f / 2.0f) * 1000);
+            //Sleep((10.0f / 2.0f) * 1000);
         }
     } catch (Suancai::Exception::BaseException* pE) {
         pE->showMsg();

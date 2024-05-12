@@ -91,12 +91,12 @@ void Suancai::Media::Audio::AudioRenderer::init(IMMDevice* p_audDevice, u32 buff
 	this->device_name.assign((char16_t*)prop.pwszVal);
 }
 
-void Suancai::Media::Audio::AudioRenderer::enableRender() {
+void Suancai::Media::Audio::AudioRenderer::start() {
 	
-	CHECK_AND_THROW(FAILED(this->p_client->Start()), "无法开始捕获", -1);
+	CHECK_AND_THROW(FAILED(this->p_client->Start()), "Start Failed", -1);
 }
 
-void Suancai::Media::Audio::AudioRenderer::play(std::vector<std::vector<float>>& data, i32 samples) {
+void Suancai::Media::Audio::AudioRenderer::fillSamples(std::vector<std::vector<float>>& data, i32 samples) {
 
 	UINT32 bufferUsedFrameCnt = 0;
 	HRESULT hr;
@@ -122,6 +122,16 @@ void Suancai::Media::Audio::AudioRenderer::play(std::vector<std::vector<float>>&
 		}
 		Sleep(16);
 	}
+}
+
+void Suancai::Media::Audio::AudioRenderer::stop() {
+
+	CHECK_AND_THROW(FAILED(this->p_client->Stop()), "Stop Failed", -1);
+}
+
+void Suancai::Media::Audio::AudioRenderer::reset() {
+
+	CHECK_AND_THROW(FAILED(this->p_client->Reset()), "Reset Failed", -1);
 }
 
 std::pair<u64, u64>& Suancai::Media::Audio::AudioRenderer::getDevicePosition() {

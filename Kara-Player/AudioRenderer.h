@@ -47,8 +47,10 @@ namespace Suancai {
 				/// <summary>
 				/// tell the system to start capture audio data, you can aquire the data from AudioCaptureClient
 				/// </summary>
-				void enableRender();
-				void play(std::vector<std::vector<float>>& data, i32 samples);
+				void start();
+				void fillSamples(std::vector<std::vector<float>>& data, i32 samples);
+				void stop();
+				void reset();
 				std::pair<u64, u64>& getDevicePosition();
 				void getFreeSpaceCnt(u32& freeCnt, u32& totalCnt);
 				void* getFreeSpacePointer(i32 frameRequested);

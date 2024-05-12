@@ -46,11 +46,11 @@ float4 main(PixelInput input) : SV_TARGET {
     float4 oriSample = tex.Sample(state, uv);
     float4 ret = float4(0,0,0,0);
     [unroll]
-    for (float i = 0; i < 10; i+=0.5)
+    for (float i = 0; i < 10; i+=1)
     {
-        ret += tex.SampleLevel(state, uv, i);
+        ret += tex.SampleLevel(state, uv, i) * 0.2;
     }
-    return ret / (float(i));
+    return lerp(ret, oriSample, 0.25);
     
     //
    // float2 newuv = uv * float2(1920 / 8.0, 1080 / 8.0);
